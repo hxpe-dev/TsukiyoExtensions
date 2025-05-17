@@ -7,45 +7,46 @@ function buildUrl(endpoint, params) {
   let query = '';
   if (params) {
     query = Object.entries(params)
-      .flatMap(([key, value]) => {
+      .flatMap(function ([key, value]) {
         if (Array.isArray(value)) {
-          return value.map(v => `${encodeURIComponent(key)}[]=${encodeURIComponent(v)}`);
+          return value.map(function (v) {
+            return encodeURIComponent(key) + '[]=' + encodeURIComponent(v);
+          });
         } else if (typeof value === 'object' && value !== null) {
-          return Object.entries(value).map(([nestedKey, nestedValue]) => {
-            if (['string', 'number', 'boolean'].includes(typeof nestedValue)) {
-              return `${encodeURIComponent(`${key}[${nestedKey}]`)}=${encodeURIComponent(nestedValue)}`;
+          return Object.entries(value).map(function ([nestedKey, nestedValue]) {
+            if (['string', 'number', 'boolean'].indexOf(typeof nestedValue) !== -1) {
+              return encodeURIComponent(key + '[' + nestedKey + ']') + '=' + encodeURIComponent(nestedValue);
             }
             return '';
-          });exports.default
+          });
         } else {
-          return [`${encodeURIComponent(key)}=${encodeURIComponent(value)}`];
+          return [encodeURIComponent(key) + '=' + encodeURIComponent(value)];
         }
       })
       .join('&');
   }
-  return `${BASE_URL}${endpoint}${query ? `?${query}` : ''}`;
+  return BASE_URL + endpoint + (query ? '?' + query : '');
 }
 
-async function fetchFromApi(endpoint, params, urlAddon = '') {
-  const now = Date.now();
+function fetchFromApi(endpoint, params, urlAddon) {
+  if (urlAddon === undefined) urlAddon = '';
+  var now = Date.now();
   if (isRateLimited && now < rateLimitResetTime) {
-    throw new Error('RATE_LIMITED');
+    return Promise.reject(new Error('RATE_LIMITED'));
   }
 
-  const url = buildUrl(endpoint, params);
-  const response = await fetch(`${url}${urlAddon}`);
-
-  if (response.status === 429) {
-    isRateLimited = true;
-    rateLimitResetTime = Date.now() + 60 * 1000;
-    throw new Error('RATE_LIMITED');
-  }
-
-  if (!response.ok) {
-    throw new Error(`API Error: ${response.status}`);
-  }
-
-  return response.json();
+  var url = buildUrl(endpoint, params);
+  return fetch(url + urlAddon).then(function (response) {
+    if (response.status === 429) {
+      isRateLimited = true;
+      rateLimitResetTime = Date.now() + 60 * 1000;
+      return Promise.reject(new Error('RATE_LIMITED'));
+    }
+    if (!response.ok) {
+      return Promise.reject(new Error('API Error: ' + response.status));
+    }
+    return response.json();
+  });
 }
 
 module.exports = {
@@ -53,112 +54,135 @@ module.exports = {
   name: 'Mangadex',
   version: '1.0.0',
 
-  // Search manga by title
-  fetchMangaList: async (query, options = {}) => {
-    const { limit = 10, plusEighteen = true, order = { relevance: 'desc' } } = options;
+  fetchMangaList: function (query, options) {
+    if (!options) options = {};
+    var limit = options.limit !== undefined ? options.limit : 10;
+    var plusEighteen = options.plusEighteen !== undefined ? options.plusEighteen : true;
+    var order = options.order !== undefined ? options.order : { relevance: 'desc' };
 
-    const data = await fetchFromApi(
+    return fetchFromApi(
       '/manga',
       {
         title: query,
-        limit,
-        order,
+        limit: limit,
+        order: order,
         contentRating: plusEighteen ? [] : ['safe', 'suggestive'],
         includes: ['cover_art'],
       },
-      `?_=${Date.now()}`
-    );
+      '?_=' + Date.now()
+    ).then(function (data) {
+      var mangaList = data.data || [];
 
-    const mangaList = data.data;
-
-    const enriched = await Promise.all(
-      mangaList.map(async manga => {
-        const coverRel = manga.relationships?.find(rel => rel.type === 'cover_art');
-        if (!coverRel) return manga;
-
-        try {
-          const coverData = await fetchFromApi(`/cover/${coverRel.id}`);
-          const fileName = coverData?.data?.attributes?.fileName;
-          return { ...manga, coverFileName: fileName };
-        } catch {
-          return manga;
+      var enrichedPromises = mangaList.map(function (manga) {
+        var coverRel = (manga.relationships || []).find(function (rel) {
+          return rel.type === 'cover_art';
+        });
+        if (!coverRel) {
+          return Promise.resolve(manga);
         }
-      })
-    );
+        return fetchFromApi('/cover/' + coverRel.id)
+          .then(function (coverData) {
+            var fileName = coverData && coverData.data && coverData.data.attributes && coverData.data.attributes.fileName;
+            var extended = Object.assign({}, manga);
+            extended.coverFileName = fileName;
+            return extended;
+          })
+          .catch(function () {
+            return manga;
+          });
+      });
 
-    return enriched;
-  },
-
-  // Fetch manga details by ID
-  fetchMangaDetails: async (mangaId) => {
-    const data = await fetchFromApi(`/manga/${mangaId}`, {
-      includes: ['cover_art'],
+      return Promise.all(enrichedPromises);
     });
-
-    const manga = data.data;
-
-    const coverRel = manga.relationships?.find(rel => rel.type === 'cover_art');
-    if (!coverRel) return manga;
-
-    try {
-      const coverData = await fetchFromApi(`/cover/${coverRel.id}`);
-      const fileName = coverData?.data?.attributes?.fileName;
-      return { ...manga, coverFileName: fileName };
-    } catch {
-      return manga;
-    }
   },
 
-  // Fetch chapters for a manga
-  fetchChapterList: async (mangaId, options = {}) => {
-    const { language = 'en', page = 1, limit = 100 } = options;
+  fetchMangaDetails: function (mangaId) {
+    return fetchFromApi('/manga/' + mangaId, {
+      includes: ['cover_art'],
+    }).then(function (data) {
+      var manga = data.data;
+      if (!manga) return null;
 
-    const data = await fetchFromApi(`/manga/${mangaId}/feed`, {
+      var coverRel = (manga.relationships || []).find(function (rel) {
+        return rel.type === 'cover_art';
+      });
+      if (!coverRel) return manga;
+
+      return fetchFromApi('/cover/' + coverRel.id)
+        .then(function (coverData) {
+          var fileName = coverData && coverData.data && coverData.data.attributes && coverData.data.attributes.fileName;
+          var extended = Object.assign({}, manga);
+          extended.coverFileName = fileName;
+          return extended;
+        })
+        .catch(function () {
+          return manga;
+        });
+    });
+  },
+
+  fetchChapterList: function (mangaId, options) {
+    if (!options) options = {};
+    var language = options.language || 'en';
+    var page = options.page || 1;
+    var limit = options.limit || 100;
+
+    return fetchFromApi('/manga/' + mangaId + '/feed', {
       translatedLanguage: [language],
       order: { chapter: 'asc' },
-      limit,
+      limit: limit,
       offset: (page - 1) * limit,
+    }).then(function (data) {
+      return data.data || [];
     });
-
-    return data.data;
   },
 
-  // Fetch chapter page images
-  fetchChapterPages: async (chapterId) => {
-    const data = await fetchFromApi(`/at-home/server/${chapterId}`);
+  fetchChapterPages: function (chapterId) {
+    return fetchFromApi('/at-home/server/' + chapterId).then(function (data) {
+      var baseUrl = data.baseUrl;
+      var chapter = data.chapter;
+      if (!chapter || !chapter.data || !baseUrl) return [];
 
-    const { baseUrl, chapter } = data;
-    return chapter.data.map(filename => `${baseUrl}/data/${chapter.hash}/${filename}`);
+      return chapter.data.map(function (filename) {
+        return baseUrl + '/data/' + chapter.hash + '/' + filename;
+      });
+    });
   },
 
-  // Get latest manga list
-  fetchLatestManga: async (limit = 10, plusEighteen = true) => {
-    try {
-      return await this.fetchMangaList('', { limit, plusEighteen, order: { latestUploadedChapter: 'desc' } });
-    } catch {
-      return [];
-    }
+  fetchLatestManga: function (limit, plusEighteen) {
+    if (limit === undefined) limit = 10;
+    if (plusEighteen === undefined) plusEighteen = true;
+
+    // Use `module.exports` instead of `this`
+    return module.exports
+      .fetchMangaList('', { limit: limit, plusEighteen: plusEighteen, order: { latestUploadedChapter: 'desc' } })
+      .catch(function () {
+        return [];
+      });
   },
 
-  // Get most followed manga list
-  fetchMostFollowedManga: async (limit = 10, plusEighteen = true) => {
-    try {
-      return await this.fetchMangaList('', { limit, plusEighteen, order: { followedCount: 'desc' } });
-    } catch {
-      return [];
-    }
+  fetchMostFollowedManga: function (limit, plusEighteen) {
+    if (limit === undefined) limit = 10;
+    if (plusEighteen === undefined) plusEighteen = true;
+
+    return module.exports
+      .fetchMangaList('', { limit: limit, plusEighteen: plusEighteen, order: { followedCount: 'desc' } })
+      .catch(function () {
+        return [];
+      });
   },
 
-  // Fetch cover filename by cover ID
-  fetchCoverFileName: async (coverId) => {
-    try {
-      const coverData = await fetchFromApi(`/cover/${coverId}`);
-      return coverData.data?.attributes?.fileName || null;
-    } catch {
-      return null;
-    }
+  fetchCoverFileName: function (coverId) {
+    return fetchFromApi('/cover/' + coverId)
+      .then(function (coverData) {
+        return (coverData && coverData.data && coverData.data.attributes && coverData.data.attributes.fileName) || null;
+      })
+      .catch(function () {
+        return null;
+      });
   },
 
-  // Check if API is rate limited
-  isApiRateLimited: () => isRateLimited,
+  isApiRateLimited: function () {
+    return isRateLimited;
+  },
 };
