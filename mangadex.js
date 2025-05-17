@@ -16,7 +16,7 @@ function buildUrl(endpoint, params) {
               return `${encodeURIComponent(`${key}[${nestedKey}]`)}=${encodeURIComponent(nestedValue)}`;
             }
             return '';
-          });
+          });exports.default
         } else {
           return [`${encodeURIComponent(key)}=${encodeURIComponent(value)}`];
         }
@@ -48,7 +48,7 @@ async function fetchFromApi(endpoint, params, urlAddon = '') {
   return response.json();
 }
 
-export default {
+module.exports = {
   id: 'mangadex-extension',
   name: 'Mangadex',
   version: '1.0.0',
