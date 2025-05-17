@@ -187,4 +187,4 @@ const mangadexExtension = {
   },
 };
 
-window.mangadexExtension = mangadexExtension;
+module.exports.default = mangadexExtension;
