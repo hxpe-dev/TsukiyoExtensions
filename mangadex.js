@@ -49,7 +49,7 @@ function fetchFromApi(endpoint, params, urlAddon) {
   });
 }
 
-module.exports = {
+const mangadexExtension = {
   id: 'mangadex-extension',
   name: 'Mangadex',
   version: '1.0.0',
@@ -186,3 +186,5 @@ module.exports = {
     return isRateLimited;
   },
 };
+
+window.mangadexExtension = mangadexExtension;
