@@ -85,7 +85,7 @@ globalThis.extension = {
   search: function (query, options = {}) {
     const {
       limit = 10,
-      plusEighteen = true,
+      matureContent = true,
       order = { relevance: 'desc' },
     } = options;
 
@@ -95,7 +95,7 @@ globalThis.extension = {
         title: query,
         limit,
         order,
-        contentRating: plusEighteen ? [] : ['safe', 'suggestive'],
+        contentRating: matureContent ? [] : ['safe', 'suggestive'],
         includes: ['cover_art'],
       },
       `?_=${Date.now()}`
@@ -125,13 +125,13 @@ globalThis.extension = {
 
     const latestMangaPromise = this.search('', {
       limit,
-      plusEighteen: matureContent,
+      matureContent: matureContent,
       order: { latestUploadedChapter: 'desc' },
     }).catch(() => []);
 
     const mostFollowedMangaPromise = this.search('', {
       limit,
-      plusEighteen: matureContent,
+      matureContent: matureContent,
       order: { followedCount: 'desc' },
     }).catch(() => []);
 
