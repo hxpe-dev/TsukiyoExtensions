@@ -153,8 +153,7 @@ globalThis.extension = {
     if (limit === undefined) limit = 10;
     if (plusEighteen === undefined) plusEighteen = true;
 
-    // Use \`module.exports\` instead of \`this\`
-    return module.exports
+    return globalThis.extension
       .fetchMangaList('', { limit: limit, plusEighteen: plusEighteen, order: { latestUploadedChapter: 'desc' } })
       .catch(function () {
         return [];
@@ -165,7 +164,7 @@ globalThis.extension = {
     if (limit === undefined) limit = 10;
     if (plusEighteen === undefined) plusEighteen = true;
 
-    return module.exports
+    return globalThis.extension
       .fetchMangaList('', { limit: limit, plusEighteen: plusEighteen, order: { followedCount: 'desc' } })
       .catch(function () {
         return [];
