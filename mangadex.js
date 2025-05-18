@@ -49,12 +49,53 @@ function fetchFromApi(endpoint, params, urlAddon) {
   });
 }
 
+function fetchMangaDetails (mangaId) {
+  return fetchFromApi('/manga/' + mangaId, {
+    includes: ['cover_art'],
+  }).then(function (data) {
+    var manga = data.data;
+    if (!manga) return null;
+
+    var coverRel = (manga.relationships || []).find(function (rel) {
+      return rel.type === 'cover_art';
+    });
+    if (!coverRel) return manga;
+
+    return fetchFromApi('/cover/' + coverRel.id)
+      .then(function (coverData) {
+        var fileName = coverData && coverData.data && coverData.data.attributes && coverData.data.attributes.fileName;
+        var extended = Object.assign({}, manga);
+        extended.coverFileName = fileName;
+        return extended;
+      })
+      .catch(function () {
+        return manga;
+      });
+  });
+}
+
+function fetchChapterList (mangaId, options) {
+  if (!options) options = {};
+  var language = options.language || 'en';
+  var page = options.page || 1;
+  var limit = options.limit || 100;
+
+  return fetchFromApi('/manga/' + mangaId + '/feed', {
+    translatedLanguage: [language],
+    order: { chapter: 'asc' },
+    limit: limit,
+    offset: (page - 1) * limit,
+  }).then(function (data) {
+    return data.data || [];
+  });
+}
+
 globalThis.extension = {
   id: 'mangadex-extension',
   name: 'Mangadex',
   version: '1.0.0',
 
-  fetchMangaList: function (query, options) {
+  searchManga: function (query, options) {
     if (!options) options = {};
     var limit = options.limit !== undefined ? options.limit : 10;
     var plusEighteen = options.plusEighteen !== undefined ? options.plusEighteen : true;
@@ -96,48 +137,52 @@ globalThis.extension = {
     });
   },
 
-  fetchMangaDetails: function (mangaId) {
-    return fetchFromApi('/manga/' + mangaId, {
-      includes: ['cover_art'],
-    }).then(function (data) {
-      var manga = data.data;
-      if (!manga) return null;
+  explorer: function (limit, plusEighteen) {
+    if (limit === undefined) limit = 10;
+    if (plusEighteen === undefined) plusEighteen = true;
 
-      var coverRel = (manga.relationships || []).find(function (rel) {
-        return rel.type === 'cover_art';
-      });
-      if (!coverRel) return manga;
-
-      return fetchFromApi('/cover/' + coverRel.id)
-        .then(function (coverData) {
-          var fileName = coverData && coverData.data && coverData.data.attributes && coverData.data.attributes.fileName;
-          var extended = Object.assign({}, manga);
-          extended.coverFileName = fileName;
-          return extended;
-        })
-        .catch(function () {
-          return manga;
-        });
-    });
-  },
-
-  fetchChapterList: function (mangaId, options) {
-    if (!options) options = {};
-    var language = options.language || 'en';
-    var page = options.page || 1;
-    var limit = options.limit || 100;
-
-    return fetchFromApi('/manga/' + mangaId + '/feed', {
-      translatedLanguage: [language],
-      order: { chapter: 'asc' },
+    var latestMangaPromise = globalThis.extension.searchManga('', {
       limit: limit,
-      offset: (page - 1) * limit,
-    }).then(function (data) {
-      return data.data || [];
+      plusEighteen: plusEighteen,
+      order: { latestUploadedChapter: 'desc' },
+    }).catch(function () {
+      return [];
+    });
+
+    var mostFollowedMangaPromise = globalThis.extension.searchManga('', {
+      limit: limit,
+      plusEighteen: plusEighteen,
+      order: { followedCount: 'desc' },
+    }).catch(function () {
+      return [];
+    });
+
+    return Promise.all([latestMangaPromise, mostFollowedMangaPromise]).then(function ([latest, mostFollowed]) {
+      return {
+        'Latest Manga': latest,
+        'Most Followed Manga': mostFollowed,
+      };
     });
   },
 
-  fetchChapterPages: function (chapterId) {
+  informations: function (mangaId, options) {
+    var detailsPromise = fetchMangaDetails(mangaId).catch(function () {
+      return null;
+    });
+
+    var chaptersPromise = fetchChapterList(mangaId, options).catch(function () {
+      return [];
+    });
+
+    return Promise.all([detailsPromise, chaptersPromise]).then(function ([details, chapters]) {
+      return {
+        details: details,
+        chapters: chapters,
+      };
+    });
+  },
+
+  reader: function (chapterId) {
     return fetchFromApi('/at-home/server/' + chapterId).then(function (data) {
       var baseUrl = data.baseUrl;
       var chapter = data.chapter;
@@ -149,39 +194,18 @@ globalThis.extension = {
     });
   },
 
-  fetchLatestManga: function (limit, plusEighteen) {
-    if (limit === undefined) limit = 10;
-    if (plusEighteen === undefined) plusEighteen = true;
-
-    return globalThis.extension
-      .fetchMangaList('', { limit: limit, plusEighteen: plusEighteen, order: { latestUploadedChapter: 'desc' } })
-      .catch(function () {
-        return [];
-      });
-  },
-
-  fetchMostFollowedManga: function (limit, plusEighteen) {
-    if (limit === undefined) limit = 10;
-    if (plusEighteen === undefined) plusEighteen = true;
-
-    return globalThis.extension
-      .fetchMangaList('', { limit: limit, plusEighteen: plusEighteen, order: { followedCount: 'desc' } })
-      .catch(function () {
-        return [];
-      });
-  },
-
-  fetchCoverFileName: function (coverId) {
-    return fetchFromApi('/cover/' + coverId)
-      .then(function (coverData) {
-        return (coverData && coverData.data && coverData.data.attributes && coverData.data.attributes.fileName) || null;
-      })
-      .catch(function () {
-        return null;
-      });
-  },
-
   isApiRateLimited: function () {
     return isRateLimited;
   },
+
+
+  // fetchCoverFileName: function (coverId) {
+  //   return fetchFromApi('/cover/' + coverId)
+  //     .then(function (coverData) {
+  //       return (coverData && coverData.data && coverData.data.attributes && coverData.data.attributes.fileName) || null;
+  //     })
+  //     .catch(function () {
+  //       return null;
+  //     });
+  // },
 };
