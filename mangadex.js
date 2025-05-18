@@ -49,7 +49,7 @@ function fetchFromApi(endpoint, params, urlAddon) {
   });
 }
 
-const mangadexExtension = {
+globalThis.extension = {
   id: 'mangadex-extension',
   name: 'Mangadex',
   version: '1.0.0',
@@ -153,7 +153,7 @@ const mangadexExtension = {
     if (limit === undefined) limit = 10;
     if (plusEighteen === undefined) plusEighteen = true;
 
-    // Use `module.exports` instead of `this`
+    // Use \`module.exports\` instead of \`this\`
     return module.exports
       .fetchMangaList('', { limit: limit, plusEighteen: plusEighteen, order: { latestUploadedChapter: 'desc' } })
       .catch(function () {
@@ -186,5 +186,3 @@ const mangadexExtension = {
     return isRateLimited;
   },
 };
-
-module.exports.default = mangadexExtension;
