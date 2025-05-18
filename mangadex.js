@@ -44,39 +44,6 @@ function fetchFromApi(endpoint, params = {}, urlAddon = '') {
   });
 }
 
-function fetchMangaDetails(mangaId) {
-  return fetchFromApi(`/manga/${mangaId}`, { includes: ['cover_art'] })
-    .then(data => {
-      const manga = data.data;
-      if (!manga) return null;
-
-      const coverRel = (manga.relationships || []).find(rel => rel.type === 'cover_art');
-      if (!coverRel) return manga;
-
-      return fetchFromApi(`/cover/${coverRel.id}`)
-        .then(coverData => {
-          const fileName = coverData?.data?.attributes?.fileName;
-          return { ...manga, coverFileName: fileName };
-        })
-        .catch(() => manga);
-    });
-}
-
-function fetchChapterList(mangaId, options = {}) {
-  const {
-    language = 'en',
-    page = 1,
-    limit = 100,
-  } = options;
-
-  return fetchFromApi(`/manga/${mangaId}/feed`, {
-    translatedLanguage: [language],
-    order: { chapter: 'asc' },
-    limit,
-    offset: (page - 1) * limit,
-  }).then(data => data.data || []);
-}
-
 globalThis.extension = {
   id: 'mangadex-extension',
   name: 'Mangadex',
@@ -141,14 +108,37 @@ globalThis.extension = {
     }));
   },
 
-  informations: function (mangaId, options = {}) {
-    return Promise.all([
-      fetchMangaDetails(mangaId).catch(() => null),
-      fetchChapterList(mangaId, options).catch(() => []),
-    ]).then(([details, chapters]) => ({
-      details,
-      chapters,
-    }));
+  informations: function (mangaId) {
+    return fetchFromApi(`/manga/${mangaId}`, { includes: ['cover_art'] })
+      .then(data => {
+        const manga = data.data;
+        if (!manga) return null;
+
+        const coverRel = (manga.relationships || []).find(rel => rel.type === 'cover_art');
+        if (!coverRel) return manga;
+
+        return fetchFromApi(`/cover/${coverRel.id}`)
+          .then(coverData => {
+            const fileName = coverData?.data?.attributes?.fileName;
+            return { ...manga, coverFileName: fileName };
+          })
+          .catch(() => manga);
+      });
+  },
+
+  chapters: function (mangaId, options = {}) {
+    const {
+      language = 'en',
+      page = 1,
+      limit = 100,
+    } = options;
+
+    return fetchFromApi(`/manga/${mangaId}/feed`, {
+      translatedLanguage: [language],
+      order: { chapter: 'asc' },
+      limit,
+      offset: (page - 1) * limit,
+    }).then(data => data.data || []);
   },
 
   reader: function (chapterId, options = {}) {
